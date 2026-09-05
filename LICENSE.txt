@@ -1,0 +1,26 @@
+PROPRIETARY FREEWARE LICENSE
+
+Copyright (c) 2026 Ricardo Gutierrez. All rights reserved.
+
+Permission is granted to download, install, and use this software free of
+charge for personal and commercial purposes.
+
+This software is proprietary. No ownership rights or source-code rights are
+transferred to the user.
+
+You may not modify, reverse engineer, decompile, disassemble, sell, sublicense,
+or incorporate the software into another product, except where such restrictions
+are prohibited by applicable law.
+
+Redistribution permitted:
+You may redistribute the original, unmodified ZIP file free of charge, provided
+that all included files and notices remain intact. You may not charge for the
+software or represent yourself as its author.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE, AND NON-INFRINGEMENT. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE
+COPYRIGHT HOLDER SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY
+ARISING FROM THE SOFTWARE OR ITS USE.
+
+This licence terminates automatically if you violate its terms.
