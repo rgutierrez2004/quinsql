@@ -6,8 +6,6 @@
 > This is an early **preview**, things might be a little rough around the edges, so please let us know if you spot any bugs<br>
 > **Freeware. No JVM. No Oracle Client required.**
 
----
-
 ## Overview
 
 QuinSQL is a fast, interactive SQL client and agentic workbench for Oracle Databases.
@@ -18,8 +16,6 @@ Whether you are running a quick query, automating a deployment, or asking an AI 
 to explain a slow execution plan — QuinSQL is the same tool, the same session,
 the same workflow.
 
----
-
 ## Screenshots
 
 ### Interactive REPL with Schema-Aware Completion
@@ -29,8 +25,6 @@ the same workflow.
 ### Schema Dependency Graph — `/graph show`
 
 *[ animated GIF — coming soon ]*
-
----
 
 ## Features
 
@@ -132,8 +126,6 @@ with additional formats beyond the SQLcl baseline.
 | MCP client — agent can reach Jira, Slack, object storage mid-task | Coming soon |
 | Skill system — Markdown-defined runbooks invocable as slash-commands | Coming soon |
 
----
-
 ## Feature Comparison
 
 SQL\*Plus and SQLcl are both solid tools with long track records, and QuinSQL
@@ -165,8 +157,6 @@ respects everything they built. The world of database tooling has simply moved o
 | License / cost | Free | Free | Free |
 | Runtime dependency | Oracle Client (required) | JVM (thin JDBC by default; Oracle Client optional) | None — thin wire protocol; Oracle Client optional |
 
----
-
 ## Supported Oracle Database Features
 
 QuinSQL connects to Oracle Databases and supports the following database capabilities:
@@ -183,8 +173,6 @@ QuinSQL connects to Oracle Databases and supports the following database capabil
 - End-to-end monitoring and tracing
 - Support for Oracle AI Database 26ai Deep Data Security
 - Support for fetching and inserting Arrow arrays
-
----
 
 ## Installation
 
@@ -245,8 +233,6 @@ quinsql file <(printf 'SET LOADFORMAT PARQUET
 UNLOAD TABLE sh.sales DIR /data/export') -p hr-dev
 ```
 
----
-
 ## Documentation
 
 | Guide | Contents |
@@ -256,12 +242,8 @@ UNLOAD TABLE sh.sales DIR /data/export') -p hr-dev
 | [TUI Guide](USERGUIDE-TUI.md) | Interactive REPL, slash-commands, autocompletion, scroll mode |
 | [LOAD / UNLOAD Guide](USERGUIDE-LOAD-UNLOAD.md) | Data import/export, Parquet, Arrow, all format options |
 
----
-
 ## License
 
 QuinSQL is freeware. See [LICENSE.txt](LICENSE.txt) for full details.
-
----
 
 *QuinSQL is under active development. Features marked "coming soon" are planned and tracked in the project roadmap.*
