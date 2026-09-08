@@ -178,7 +178,7 @@ QuinSQL connects to Oracle Databases and supports the following database capabil
 
 ### Prerequisites
 
-- Windows 10 / 11 (x86-64), macOS 12+ (arm64), or Linux (x86-64)
+- Windows 10 / 11 (x86-64), macOS 12+ (arm64), or Oracle/Red Hat Linux 9, Ubuntu 22.04+ (x86-64)
 - No Oracle Client libraries required — QuinSQL uses a native driver with built-in Oracle connectivity
 
 ### 1 — First-time setup
