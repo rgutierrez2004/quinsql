@@ -20,11 +20,11 @@ the same workflow.
 
 ### Interactive REPL with Schema-Aware Completion
 
-*[ animated GIF — coming soon ]*
+![Auto-completion](images/auto-completion.gif)
 
 ### Schema Dependency Graph — `/graph show`
 
-*[ animated GIF — coming soon ]*
+![Graph-show](images/graph-show.gif)
 
 ## Features
 
