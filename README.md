@@ -183,7 +183,7 @@ QuinSQL connects to Oracle Databases and supports the following database capabil
 
 ### 1 — First-time setup
 
-Download the binary for your platform from the QuinSQL [release](https://github.com/rgutierrez2004/quinsql/releases) page. Run the interactive setup wizard to configure your connection and create the QuinSQL data directory:
+Download the binary for your platform from the QuinSQL [releases](https://github.com/rgutierrez2004/quinsql/releases) page. Run the interactive setup wizard to configure your connection and create the QuinSQL data directory:
 
 ```
 quinsql setup
