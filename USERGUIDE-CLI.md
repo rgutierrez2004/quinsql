@@ -87,8 +87,9 @@ to `quinsql connect`.
 
 [^ top](#table-of-contents)
 
-Creates or updates a saved connection profile. The connection is tested before saving.
-The password is prompted interactively and stored in the OS keychain.
+Creates or updates a saved connection profile. The connection is verified before saving.
+All credentials are prompted interactively (no echo) and stored in the OS keychain or
+an encrypted file — never in the profile database.
 
 ```bash
 quinsql connect-save --name <name> --dsn <dsn> --user <user> [options]
@@ -99,11 +100,11 @@ quinsql connect-save --name <name> --dsn <dsn> --user <user> [options]
 | Flag | Required | Description |
 |---|---|---|
 | `--name <name>` | Yes | Profile name; used with `-p` everywhere |
-| `--dsn <dsn>` | Yes | Oracle EZConnect: `host:port/service_name` |
+| `--dsn <dsn>` | Yes | Connect string: EZConnect, full descriptor, or TNS alias |
 | `--user <user>` | Yes | Oracle database username |
 | `--sysdba` | No | Connect with SYSDBA privilege |
 | `--sysoper` | No | Connect with SYSOPER privilege |
-| `--wallet-path <path>` | No | Path to Oracle Wallet directory |
+| `--wallet-path <path>` | No | Path to a wallet `.zip` file or an already-extracted wallet directory |
 | `--policy <preset>` | No | Safety policy preset; default `global` |
 
 **Policy presets:**
@@ -114,6 +115,34 @@ quinsql connect-save --name <name> --dsn <dsn> --user <user> [options]
 | `open` | No confirmation required for any statement |
 | `confirm-writes` | DML/DDL require confirmation; destructive require approval |
 | `plan-approval` | Statements above READ require explicit approval |
+
+**Oracle Wallet and ADB connections**
+
+When `--wallet-path` points to a `.zip` file (the bundle downloaded from the Oracle Cloud
+Console), QuinSQL extracts it automatically to:
+
+```
+~/.quinsql/wallets/<profile-name>/
+```
+
+The profile stores the path to this extracted directory. The original zip is not needed
+after the profile is saved.
+
+After extracting the zip, QuinSQL prompts for the **wallet password** — the password that
+was set in the Oracle Cloud Console when downloading the wallet. This is separate from the
+database password and is used to decrypt the TLS private key inside the wallet.
+
+```
+Password for ADMIN@...:           ← Oracle database password
+Wallet password (set at download time, leave blank if none):   ← wallet download password
+```
+
+Leave the wallet password blank if the wallet directory was already extracted and the
+`ewallet.pem` file contains an unencrypted private key.
+
+If Oracle Cloud issues a new wallet (wallets have an expiry date), re-run `connect-save`
+with the new zip path. QuinSQL will overwrite the extracted directory and update the stored
+wallet password.
 
 **Examples:**
 
@@ -136,11 +165,17 @@ quinsql connect-save --name sys-dba \
                      --sysdba \
                      --policy plan-approval
 
-# Oracle Autonomous Database (ADB) with Wallet
-quinsql connect-save --name adb-dev \
-                     --dsn "adb.example.com:1522/myatp_medium" \
+# Oracle Autonomous Database — pass the zip downloaded from the Cloud Console
+quinsql connect-save --name adb-prod \
+                     --dsn '(description=(retry_count=20)(retry_delay=3)(address=(protocol=tcps)(port=1522)(host=adb.us-phoenix-1.oraclecloud.com))(connect_data=(service_name=abc123_myatp_high.adb.oraclecloud.com))(security=(ssl_server_dn_match=yes)))' \
                      --user ADMIN \
-                     --wallet-path ~/wallets/myatp
+                     --wallet-path ~/Wallet_myatp.zip
+
+# ADB using a pre-extracted wallet directory (no zip extraction step)
+quinsql connect-save --name adb-dev \
+                     --dsn "myatp_low" \
+                     --user ADMIN \
+                     --wallet-path ~/.quinsql/wallets/adb-dev
 ```
 
 ---
