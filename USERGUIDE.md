@@ -47,6 +47,8 @@ It runs as a single native binary with no additional runtimes.
 - **Safety policies** — classify every statement by blast-radius and require confirmation
   or approval before destructive operations execute.
 - **Audit journal** — every statement is recorded with outcome, actor, and timing.
+- **Schedule jobs** — run periodic `.sql` scripts by the **operating system's own
+scheduler** (Linux, macOS, and Windows) and get notified on completion.
 
 ---
 
@@ -123,6 +125,33 @@ Thick mode is only needed for:
 - Advanced Oracle Network compression
 
 For most use cases, thin mode is sufficient and recommended.
+
+### macOS: sign the binary to stop repeated Keychain prompts
+
+QuinSQL stores profile passwords in the macOS Keychain. An **unsigned** binary
+has no stable identity, so macOS treats it as an untrusted program:
+each time you pick a profile you are prompted to allow Keychain access and
+must enter your login Keychain password again — and **Always Allow** does not
+stick, moreover this could happen each time you download a new version of the binary.
+
+The fix is to sign the binary (or a new version of it) with a stable, local self-signed certificate so
+macOS recognises it across executions:
+
+1. Open **Keychain Access**.
+2. From the top Mac menu, go to **Keychain Access > Certificate Assistant > Create a Certificate...**
+3. Configure the certificate exactly like this:
+   - **Name:** `QuinSQL`
+   - **Identity Type:** Self Signed Root
+   - **Certificate Type:** Code Signing
+4. Click **Create**, then **Done**.
+5. Sign the binary right after download:
+
+   ```bash
+   codesign --force --sign "QuinSQL" /path/to/quinsql
+   ```
+
+Because the binary is now signed by a static local identity on your Mac, macOS
+respects the **Always Allow** button the next time you click it. This setting will also work with imported profile credentials into the macOS Keychain.
 
 ---
 
@@ -275,6 +304,12 @@ quinsql import quinsql-backup.zip --overwrite
 quinsql import quinsql-backup.zip --data-dir /opt/quinsql-data
 ```
 
+`quinsql export --include-schedule` also carries scheduled jobs, their
+scripts and encrypted wallets; `quinsql import --scripts-dir/--wallet-dir`
+controls where they land.  Jobs are created in the TUI with `/schedule` —
+see the [TUI Guide](USERGUIDE-TUI.md#schedule) and the
+[CLI Guide](USERGUIDE-CLI.md#job) for details.
+
 ---
 
 ## Further Reading
@@ -283,6 +318,6 @@ quinsql import quinsql-backup.zip --data-dir /opt/quinsql-data
 
 | Guide | Contents |
 |---|---|
-| [CLI Guide](USERGUIDE-CLI.md) | Headless mode, `exec`, `file`, output formats, piping |
-| [TUI Guide](USERGUIDE-TUI.md) | Interactive REPL, slash-commands, scroll mode, SQL*Plus compat |
+| [CLI Guide](USERGUIDE-CLI.md) | Headless mode, `exec`, `file`, `job` (scheduler runner), output formats, piping |
+| [TUI Guide](USERGUIDE-TUI.md) | Interactive REPL, slash-commands, `/schedule` jobs, scroll mode, SQL*Plus compat |
 | [LOAD / UNLOAD Guide](USERGUIDE-LOAD-UNLOAD.md) | Data import/export, Parquet, Arrow, all format options |

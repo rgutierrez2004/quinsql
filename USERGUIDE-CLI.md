@@ -14,6 +14,7 @@
   - [connect-delete](#connect-delete)
   - [exec](#exec)
   - [file](#file)
+  - [job](#job)
   - [setup](#setup)
   - [admin-password](#admin-password)
   - [export](#export)
@@ -308,6 +309,58 @@ EXIT 0
 
 ---
 
+### job
+
+[^ top](#table-of-contents)
+
+Runs one scheduled job — this is the command the operating-system scheduler
+(systemd user timer, launchd agent, or Task Scheduler task) launches at each
+fire time.  Jobs are created and managed from the TUI with `/schedule`;
+see the [TUI Guide](USERGUIDE-TUI.md#schedule).
+
+```bash
+quinsql job <id>          # e.g. quinsql job j-0143
+```
+
+The runner executes the job's `.sql` script through the normal QuinSQL
+pipeline — same policy gates and audit journal — writing per-run output to
+`~/.quinsql/schedule/logs/`, the run history to `schedule.db`, and (when
+`[smtp]` is configured) an e-mail notification.  A second concurrent run of
+the same job is skipped while one is active.
+
+The runner never prompts: a statement that the profile's policy would gate on
+(confirm / plan-approval) is *parked*, the run ends `pending_approval`, and
+the job is automatically disabled.  Run it interactively once with
+`/schedule run <id>` to answer the prompts at the keyboard and re-enable.
+
+**Exit codes:**
+
+| Code | Meaning |
+|---|---|
+| `0` | `ok` — all statements succeeded |
+| `1` | `error` or `aborted` |
+| `2` | `pending_approval` — a gated statement was parked; the job is disabled |
+| `3` | skipped / configuration problem (job disabled, before start date, no credentials, previous run still active, schedule.db unreadable) |
+| `4` | `cancelled` (user cancel or max-runtime timeout) |
+
+**E-mail notifications** are configured with a `[smtp]` block in
+`config.toml`:
+
+```toml
+[smtp]
+host     = "smtp.example.com"
+port     = 587                     # 587 for starttls, 465 for tls, 25 for none
+security = "starttls"              # "starttls" | "tls" | "none"
+user     = "alerts@example.com"    # omit for an unauthenticated relay
+from     = "QuinSQL <alerts@example.com>"
+```
+
+The password is **not** in the file — store it once from the TUI with
+`/schedule smtp-password` (saved encrypted in `credentials.enc`, the store
+the runner reads).  Use *send test email* in `/schedule new` to verify.
+
+---
+
 ### setup
 
 [^ top](#table-of-contents)
@@ -352,13 +405,24 @@ Both operations prompt for the password interactively; it is never passed as a c
 Creates a portable ZIP backup of QuinSQL configuration.
 
 ```bash
-quinsql export <output.zip> [--include-catalog] [--include-audit]
+quinsql export <output.zip> [--include-catalog] [--include-audit] [--include-schedule]
 ```
 
 | Flag | Description |
 |---|---|
 | `--include-catalog` | Include the local schema catalog snapshot |
 | `--include-audit` | Include the full audit journal |
+| `--include-schedule` | Include scheduled jobs, run history, and each job's script (with its `@`/`@@` includes) |
+
+Every export includes `config.toml`, `profiles.db`, `history.db`, the profile
+passwords (re-encrypted with a key derived from the administrator password),
+the SMTP password when `[smtp].user` is set, and every wallet directory a
+profile references as an encrypted blob (`wallets/<n>.bin`) — wallet files are
+never stored in clear.  `--include-schedule` adds `schedule.db` (jobs + run
+history) and each job's main script under `scripts/<id>/` together with the
+`@`-/`@@`-included files collected recursively.  Profiles whose connection
+mode needs a live environment (OCI IAM token exchange, Entra ID) export
+without credentials.
 
 **Examples:**
 
@@ -379,13 +443,37 @@ quinsql export ~/backups/quinsql-full.zip --include-catalog --include-audit
 Restores configuration from a `quinsql export` ZIP file.
 
 ```bash
-quinsql import <file.zip> [--overwrite] [--data-dir <dir>]
+quinsql import <file.zip> [--overwrite] [--data-dir <dir>] \
+                          [--scripts-dir <dir>] [--wallet-dir <dir>]
 ```
 
 | Flag | Description |
 |---|---|
 | `--overwrite` | Replace existing profiles and settings with those from the backup |
 | `--data-dir <dir>` | Restore to a specific data directory instead of the default |
+| `--scripts-dir <dir>` | Where job scripts go (default `~/scripts`; prompted when the archive has scripts and the flag is absent) |
+| `--wallet-dir <dir>` | Where wallet directories go (default `~/wallet`; prompted likewise). Each wallet lands in `<wallet-dir>/<name>` (`<name>-2`, `-3`… if it exists, unless `--overwrite`) |
+
+When the archive contains a schedule, import **merges** it: every job gets a
+fresh `j-NNNN` id (the summary prints the `old → new` mapping), is imported
+**disabled**, and its `script_path` is rewritten to
+`<scripts-dir>/<old-id>/<file>`.  Run history is copied and remapped.  A
+wallet is only extracted when at least one profile that references it was
+imported in this run, and the profile's `wallet_path` is rewritten to the new
+location — otherwise a `wallet for <profiles> not extracted` line is
+printed, so repeated imports do not litter `-2`/`-3` copies.  Runner
+credentials for imported jobs are written to the target **file store**
+(`credentials.enc`) even when the configured store is the OS keyring; jobs
+whose profile has no stored credential are listed with
+`re-save via /schedule edit`.  Re-enable on the new machine with
+`/schedule enable j-N` — OS timers are never registered during import.
+Import does **not** rewrite paths inside script bodies (`UNLOAD … DIR`,
+`LOAD … FILE`, `SPOOL`, `HOST`, `@/abs` includes); it prints
+`⚠ <file>:<line>: <path> — not a valid path on this OS` for paths foreign
+to the target OS — edit those scripts before enabling the job.
+On Windows run that step from a terminal started as Administrator: S4U
+tasks can only be created elevated (see the `/schedule` platform notes in
+USERGUIDE-TUI).
 
 **Examples:**
 
@@ -438,6 +526,11 @@ quinsql exec "SELECT * FROM regions" -p dev-hr --format md
 | `N` | Custom code set by `EXIT N` in a script |
 
 Use `$?` (Linux/macOS) or `%ERRORLEVEL%` (Windows) to check the exit code in scripts.
+
+Windows note: spool files are written as UTF-8. PowerShell 7 reads them
+correctly by default; in PowerShell 5.1 use `Get-Content <file> -Encoding UTF8`,
+otherwise the box-drawing lines (`─`) show as garbled characters. Console
+output and the TUI are unaffected.
 
 ```bash
 quinsql file deploy.sql -p prod-hr
@@ -501,7 +594,8 @@ All standard SQL\*Plus commands are supported:
 | `SET COLSEP '<char>'` | Column separator character |
 | `DEFINE <var> = <value>` | Define a substitution variable |
 | `@<file>` / `@@<file>` | Run a script (absolute / relative path) |
-| `SPOOL <file>` / `SPOOL OFF` | Write output to a file |
+| `SPOOL <file> [CREATE\|REPLACE\|APPEND]` / `SPOOL OFF` | Write output to a file (quote paths containing spaces; `.lst` added when the file name has no extension) |
+| `SET TERMOUT OFF` | Suppress screen output produced by scripts (`file`, `@`, `job`) — the SPOOL file still receives everything |
 | `WHENEVER SQLERROR EXIT [code]` | Exit on error with a code |
 | `PROMPT <text>` | Print a message |
 | `PAUSE [text]` | Wait for user input |
@@ -510,6 +604,10 @@ All standard SQL\*Plus commands are supported:
 | `PRINT <var>` | Print a bind variable |
 | `DESC[RIBE] <object>` | Describe a table, view, or procedure |
 | `EXIT [code]` / `QUIT [code]` | Exit with a POSIX code |
+
+SPOOL files are always written as plain-text table output without colour,
+regardless of `--format` or how QuinSQL was launched (TTY, pipe, or
+`quinsql job`) — the console format never leaks into the spool.
 
 **Substitution variables:**
 

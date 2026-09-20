@@ -31,6 +31,7 @@
   - [/catalog](#catalog)
   - [/graph](#graph)
   - [/audit](#audit)
+  - [/schedule](#schedule)
   - [/quit](#quit)
 
 ---
@@ -267,7 +268,13 @@ run `/catalog load` first (see [/catalog](#catalog)).
 [^ top](#table-of-contents)
 
 Every query result, message, and error produced during the session is appended to the
-scrollback area. The scrollback is preserved for the duration of the session.
+scrollback area. The scrollback is preserved for the duration of the session, up to a
+configurable cap — the oldest lines are dropped past the limit:
+
+| `config.toml` key (`[ui]` section) | Default | Effect |
+|---|---|---|
+| `scrollback_lines` | `100000` | Maximum scrollback lines kept (`0` = unlimited) |
+| `frame_interval_ms` | `16` | Minimum ms between screen redraws while a script or pasted batch is running (interactive input always redraws immediately) |
 
 ### Scroll mode
 
@@ -334,6 +341,12 @@ SPOOL /tmp/output.log
 SELECT * FROM employees WHERE rownum <= 10;
 SPOOL OFF
 ```
+
+`SPOOL <file>` accepts an optional `CREATE` / `REPLACE` (default) / `APPEND`
+mode and quoted paths (`SPOOL "C:\temp\my file.out" REPLACE`); `.lst` is
+appended when the file name has no extension.  In scripts (`@file`,
+`quinsql file`, scheduled jobs) `SET TERMOUT OFF` suppresses screen output
+while the spool file still receives everything.
 
 See [SQL\*Plus Script Compatibility](USERGUIDE-CLI.md#sqlplus-script-compatibility) in the
 CLI guide for the full list of supported commands.
@@ -720,6 +733,100 @@ By default `/audit` shows the **50 most recent** entries.
 /audit --export /tmp/audit-export.jsonl
 /audit --last 100 --search "DELETE"
 ```
+
+---
+
+### /schedule
+
+[^ top](#table-of-contents)
+
+Manages scheduled jobs — `.sql` scripts run by the **operating system's own
+scheduler** (systemd user timers on Linux, launchd on macOS, Task Scheduler
+on Windows).  No QuinSQL daemon is needed: at each fire time the OS launches
+`quinsql job <ID>`, which runs the script through the normal QuinSQL
+pipeline — same policy gates, same audit journal, persistent run history in
+`schedule.db`.
+
+```
+/schedule                      # same as /schedule new
+/schedule new                  # open the job editor popup
+/schedule list [all|enabled|disabled|<text>]
+/schedule edit [<id>]          # picker when no id is given; Save enables the job
+/schedule run <id>             # run the script now, interactively (a failed run's first error lands in /schedule history)
+/schedule cancel <id>          # stop the run in progress
+/schedule enable <id>          # register/enable the OS timer
+/schedule disable <id>         # pause the OS timer
+/schedule delete <id>          # remove the job (run history is kept)
+/schedule history <id> [n]     # last n runs (default 10)
+/schedule smtp-password        # store the [smtp] password in credentials.enc
+```
+
+Job ids look like `j-0143`.  `/schedule list` shows STATE (`enabled`,
+`disabled`, `orphan`, `partial`, `running`, `pending`, `creds missing`),
+the next local fire time, and the last run's result.  An `orphan` state means
+the OS registration is gone (e.g. the binary moved) — `/schedule enable`
+repairs it.
+
+#### The job popup (`/schedule new` / `/schedule edit`)
+
+Fields, in Tab order:
+
+| Field | Editing |
+|---|---|
+| `SCRIPT` | Path to a `.sql` file (`~` expanded; relative paths are anchored to the current directory).  A `recent:` row offers the last-used scripts — ←→ to choose, Enter to pick |
+| `RUNS AS` | Saved-profile selector: ←→ cycles profiles (defaults to the connected one).  Shows `user@profile · <policy>` |
+| `START DATE` | First eligible day, `YYYY-MM-DD` |
+| `TIMES` | `HH:MM` chips.  Type a time + Enter (or `+ add`) to add; ↑↓←→ select a chip, Enter/Backspace/Delete removes it.  At least one required |
+| `RECURRENCE` | `once` / `daily` / `weekly` / `monthly` — ←→ or Space to switch.  `weekly` reveals a `mon`…`sun` day row (Space toggles); `monthly` reveals `days of month:` |
+| `MAX RUNTIME` | `HH:MM`, `30m`, `2h`, or bare minutes.  Empty = unlimited.  A job that exceeds it ends `cancelled (timeout)` |
+| `NOTIFICATION` | `[x] on error` / `[x] on completion` toggles (Space), a comma-separated e-mail list, and `[ send test email ]`.  Requires `[smtp]` in config.toml + `/schedule smtp-password` — otherwise the section shows `smtp not configured` |
+| `NEXT RUNS` | Read-only preview of the next fire times in the local zone |
+
+`Tab` / `Shift+Tab` move between fields and on to the footer buttons
+`Create Job (Enter)` / `Save Job (Enter)` and `Cancel (Esc)`; `Esc` (or
+`Ctrl+C`) cancels from anywhere.  The text cursor appears only in editable
+fields; chips and buttons show focus by highlight.  Validation errors appear
+in red on the offending field's label row and clear as soon as you edit it.
+Saving a job — new or edited — always enables it and registers the OS
+timer; use `/schedule disable` to pause.
+
+#### Behaviour details
+
+- **Times are local wall-clock** on the machine the job runs on — a `02:00`
+  job fires at 02:00 local, DST-aware.
+- **`once` jobs**: the popup refuses a `once` job whose date and times are
+  all already in the past (`that time has already passed`).  After the last
+  time of the day has run, the job is retired (OS registration removed, job
+  disabled); its run history stays in `/schedule history`.
+- **Unattended policy**: scheduled runs never prompt.  A statement that the
+  profile's policy would gate on (confirm / plan-approval) is *parked*: the
+  run stops, ends `pending_approval`, and the job auto-disables.
+  `/schedule run <id>` runs the script interactively — prompts are answered
+  at the keyboard — and a successful run re-enables the job.
+- **Credentials**: saving a job copies the selected profile's DB password
+  (and wallet password, if any) into `credentials.enc` — the runner never
+  touches the OS keyring, which may be locked when the timer fires.
+  Interactive sessions are unaffected.
+- **`/schedule cancel`** is staged: first it asks the runner to cancel
+  (reported as `cancelled (user)` within seconds); if the run is still alive
+  ~10 s later it issues `ALTER SYSTEM DISCONNECT SESSION` through the normal
+  gated pipeline, then ~10 s after that kills the runner process.  Worst case
+  is about 25 s to report; on Windows the last stage is always a hard kill.
+- **Linux/systemd**: enable lingering so user timers fire while logged out —
+  `loginctl enable-linger <user>`.  Runner output goes to the systemd
+  journal, not a TTY: `journalctl --user -u native-cron-quinsql-jN-t0`
+  (native-cron writes one unit per job time; its `StandardOutput` handling
+  redirects to the journal — check there when a runner misbehaves).
+  Per-run logs are also kept in `~/.quinsql/schedule/logs/`.
+- **Windows**: tasks are registered with the S4U logon type (`schtasks /np`)
+  so they fire whether or not you are logged on.  Windows only lets
+  administrators create such tasks, so **run QuinSQL from a terminal started
+  as Administrator** whenever you create, edit or enable a job — otherwise
+  Save fails with `OS registration failed: … ERROR: Access is denied.` (a
+  new job is not created; an edited or imported job keeps its stored
+  definition and can be enabled later from an elevated session).  Listing
+  jobs, viewing history and `/schedule run` do not need elevation.
+  **macOS**: jobs are `launchd` user agents.
 
 ---
 

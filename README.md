@@ -22,9 +22,14 @@ the same workflow.
 
 ![Auto-completion](images/auto-completion.gif)
 
-### Schema Dependency Graph — `/graph show`
+### Schedule jobs to run SQL scripts in all platforms (Windows, Linux and MacOS)
+
+![Schedule-job](images/schedule-job.gif)
+
+### Schema analysis with Dependency Graph — `/graph show`
 
 ![Graph-show](images/graph-show.gif)
+
 
 ## Features
 
@@ -117,6 +122,7 @@ with additional formats beyond the SQLcl baseline.
 | Administrator credential — QuinSQL-level password stored in OS keychain | Available |
 | Export / Import — ZIP-based portable transfer of profiles, history, config | Available |
 | `quinsql admin-password set / reset` | Available |
+| Scheduled jobs — OS-native timers (systemd / launchd / Task Scheduler) running `.sql` scripts through the normal pipeline; e-mail notifications; portable via `export --include-schedule` | Available |
 
 ### Connectivity
 
@@ -148,6 +154,7 @@ respects everything they built. The world of database tooling has simply moved o
 | Security privilege analysis | No | No | Yes |
 | Safety policies and blast-radius gating | No | No | Yes |
 | Undo-first execution | No | No | Coming soon |
+| Schedule jobs to run SQL scripts | No | Yes | Yes, multi-platform and notification support (Windows, Linux, macOS) |
 | Audit journal with AI rationale | No | No | Yes / coming soon |
 | Natural-language querying (any LLM) | No | Only via external agent or cloud AI | Coming soon |
 | Agentic plan → diff → approve workflow | No | No | Coming soon |
@@ -232,6 +239,21 @@ quinsql file <(printf 'LOAD TABLE sh.customers customers.xlsx NEW') -p hr-dev
 quinsql file <(printf 'SET LOADFORMAT PARQUET
 UNLOAD TABLE sh.sales DIR /data/export') -p hr-dev
 ```
+
+### 6 — Schedule a job (in the TUI)
+
+```
+quinsql
+/schedule new      # script + profile + daily 02:00 → create job
+```
+
+The OS scheduler (systemd / launchd / Task Scheduler) launches
+`quinsql job j-0001` at each fire time — no daemon needed, and the script
+runs through the same policy gates and audit journal as interactive work.
+Move jobs between machines with `quinsql export backup.zip
+--include-schedule` / `quinsql import`.  E-mail notifications come from an
+`[smtp]` block in `config.toml` (password stored via `/schedule
+smtp-password`).
 
 ## Documentation
 
