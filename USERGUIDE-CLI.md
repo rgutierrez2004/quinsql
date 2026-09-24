@@ -609,18 +609,45 @@ SPOOL files are always written as plain-text table output without colour,
 regardless of `--format` or how QuinSQL was launched (TTY, pipe, or
 `quinsql job`) — the console format never leaks into the spool.
 
-**Substitution variables:**
+**Substitution variables**
+
+Every input line — SQL, PL/SQL and SQL\*Plus commands alike (`SPOOL`, `@`,
+`SET`, `COLUMN`, `DEFINE`, `PROMPT`, …) — has its `&var` references expanded
+before it is interpreted, exactly as SQL\*Plus does.
 
 ```sql
--- Define inline
-DEFINE env = 'PROD'
+-- Define explicitly, or capture from a query
+DEFINE env = PROD
+COLUMN ts NEW_VALUE run_ts NOPRINT
+SELECT TO_CHAR(SYSDATE, 'YYYYMMDD_HH24MISS') AS ts FROM dual;
 
--- Reference with & (prompts if not defined)
+-- A single dot ends the variable name and is consumed:
+--   &run_ts..out  ->  20260922_151644.out
+SPOOL /reports/status_&run_ts..out REPLACE
 SELECT * FROM &env._ORDERS;
 
--- Reference with && (retains value without re-prompting)
-SELECT &&col FROM employees;
+-- Script arguments are &1 … &n
+@monthly_report.sql 2026 09
+
+-- Undefined &var prompts:  Enter value for dept:
+-- The value is used for this statement only; the next statement asks again.
+SELECT * FROM emp WHERE deptno = &dept;
+
+-- Undefined &&var prompts once, then behaves like DEFINE for the session.
+SELECT * FROM emp WHERE deptno = &&dept;
 ```
+
+| Setting | Effect |
+|---|---|
+| `SET DEFINE OFF` | No expansion at all — use when data contains `&` (e.g. `'AT&T'`) |
+| `SET DEFINE <char>` | Use another substitution character, e.g. `SET DEFINE ~` |
+| `SET VERIFY ON` (default) | Print `old n:` / `new n:` for each SQL line that was changed by substitution |
+| `SET VERIFY OFF` | Suppress the old/new lines (common at the top of production scripts) |
+
+In `quinsql file` / `quinsql exec` the prompt is written to stderr and the
+answer is read from stdin, so values can be piped: `printf 'alice\n' | quinsql
+file report.sql -p prod`. `ACCEPT … HIDE` reads from the terminal directly and
+cannot be piped.
 
 **Error handling:**
 

@@ -20,6 +20,7 @@
   - [Scroll mode](#scroll-mode)
 - [Output Formats](#output-formats)
 - [SQL\*Plus Commands in the TUI](#sqlplus-commands-in-the-tui)
+  - [Substitution variables and prompts](#substitution-variables-and-prompts)
 - [Slash Commands](#slash-commands)
   - [/help](#help)
   - [/connect](#connect)
@@ -348,6 +349,32 @@ appended when the file name has no extension.  In scripts (`@file`,
 `quinsql file`, scheduled jobs) `SET TERMOUT OFF` suppresses screen output
 while the spool file still receives everything.
 
+### Substitution variables and prompts
+
+`&var` / `&&var` references are expanded on every line before it runs — in SQL, in
+`SPOOL`/`@`/`SET`/`COLUMN` arguments, in typed statements and in scripts alike. Script
+arguments arrive as `&1 … &n` (`@report.sql 2026 09`), and a single dot ends a variable
+name (`&ts..out` → `20260922_151644.out`).
+
+When a statement references a variable that is not defined, the TUI pauses and asks for it
+in the scrollback; the next Enter is the answer, not a new statement:
+
+```
+system@prod ▸ SELECT * FROM emp WHERE deptno = &dept;
+  Enter value for dept:
+  10
+old   1: SELECT * FROM emp WHERE deptno = &dept
+new   1: SELECT * FROM emp WHERE deptno = 10
+  …result grid…
+```
+
+- `&var` — the value is used for this statement only; the next statement asks again.
+- `&&var` — asked once, then kept for the session like `DEFINE`.
+- `ACCEPT`, `PAUSE` and `CONNECT user` typed at the prompt pause the same way.
+- Inside an `@script` the script resumes at the same statement once you answer.
+- `SET VERIFY OFF` hides the `old`/`new` lines; `SET DEFINE OFF` disables expansion
+  entirely (for data containing `&`); `SET DEFINE ~` switches the character.
+
 See [SQL\*Plus Script Compatibility](USERGUIDE-CLI.md#sqlplus-script-compatibility) in the
 CLI guide for the full list of supported commands.
 
@@ -568,7 +595,7 @@ stored locally for fast autocompletion, graph analysis, and browsing without rou
 /catalog load security
 /catalog schemas
 /catalog tables [--schema <schema>]
-/catalog users [--with-access-to <table>] [--open] [--expired] [--locked]
+/catalog users [--with-access-to <schema>] [--open] [--expired] [--locked]
 /catalog roles
 /catalog privileges --user <user> [--effective]
 /catalog privileges --role <role>
@@ -600,7 +627,7 @@ stored locally for fast autocompletion, graph analysis, and browsing without rou
 /catalog schemas
 /catalog tables --schema SH
 /catalog users --locked
-/catalog users --with-access-to HR.EMPLOYEES
+/catalog users --with-access-to HR
 /catalog privileges --user SCOTT
 /catalog privileges --user SCOTT --effective
 /catalog privileges --role DBA
@@ -630,7 +657,7 @@ The catalog must be loaded before most graph commands work.
 
 | Subcommand | Description |
 |---|---|
-| `deps <obj>` | Show objects that `<obj>` depends on |
+| `deps <obj>` | Show objects that depend on `<obj>` (default `--direction up`; use `down` for what `<obj>` references) |
 | `impact <obj>` | Show objects that depend on `<obj>` (what breaks if it changes) |
 | `path <from> <to>` | Find the dependency path between two objects |
 | `metrics` | Object centrality, fan-in/fan-out, complexity metrics |
