@@ -214,7 +214,7 @@ quinsql exec "<SQL>" -p <profile> [--format <fmt>] [--no-header]
 
 | Flag | Description |
 |---|---|
-| `--format <fmt>` | Output format (see [Output Formats](#output-formats)); default `table` |
+| `--format <fmt>` | Output format (see [Output Formats](#output-formats)); default `table`, or `csv` when stdout is piped and no `--format` is given |
 | `--no-header` | Omit the column header row |
 
 **Examples:**
@@ -255,7 +255,7 @@ quinsql file <script.sql> -p <profile> [--format <fmt>] [--no-header]
 
 | Flag | Description |
 |---|---|
-| `--format <fmt>` | Output format for `SELECT` results; default `table` |
+| `--format <fmt>` | Output format for `SELECT` results; default `table` — `file` always keeps `table` when piped (SQL\*Plus scripts redirected to a log must not change format); the piped-CSV default applies to `exec` only |
 | `--no-header` | Omit column headers |
 
 **Examples:**
@@ -513,6 +513,12 @@ quinsql exec "SELECT * FROM regions" -p dev-hr --format md
 > Parquet and Arrow IPC output is available through the `UNLOAD` command.
 > See [LOAD/UNLOAD Guide](USERGUIDE-LOAD-UNLOAD.md).
 
+JSON columns (Oracle 21c+/26ai `JSON` type) render as compact JSON text —
+e.g. `{"a":1,"b":"x"}`, with object keys sorted and top-level JSON strings
+keeping their quotes (`"ALICE"`). `COLUMN … FORMAT` applies to them as text
+and `SET LONG` does not cap them (the thin driver decodes them natively; the
+thick `oracle`-crate driver does not support JSON yet).
+
 ---
 
 ## Exit Codes
@@ -592,18 +598,181 @@ All standard SQL\*Plus commands are supported:
 | `SET VERIFY ON\|OFF` | Show old/new values for substitution variables |
 | `SET NULL '<text>'` | Text displayed for NULL values |
 | `SET COLSEP '<char>'` | Column separator character |
+| `SET AUTOCOMMIT OFF\|ON\|IMMEDIATE\|<n>` | Commit automatically: `ON`/`IMMEDIATE` after every DML/PLSQL statement (`Commit complete.` is printed), `<n>` after every *n* DML statements, `OFF` (default) never |
+| `SET SQLFORMAT [csv\|delimited [d [l [r]]]\|json\|json-formatted\|markdown\|default\|ansiconsole\|text\|fixed]` | SQLcl output format — drives **both** console and SPOOL while in force (unlike `/format`/`--format`, which set the console only and leave the spool in Table). `csv` quotes every non-numeric cell; `delimited` takes optional separator/left/right enclosure characters (asymmetric enclosures report SP2-0158 and keep the left one); other kinds use minimal quoting. Bare `SET SQLFORMAT` resets to the default. `insert`, `loader`, `html`, `xml` report `SP2-0158` — not supported |
+| `SET MARKUP CSV ON [DELIMITER c] [QUOTE ON\|OFF]` / `SET MARKUP CSV OFF` | SQL\*Plus equivalent of `SET SQLFORMAT csv` (quote-all by default; `QUOTE OFF` = minimal quoting). `OFF` restores whatever format was in force before `ON`. `SET MARKUP HTML …` is accepted and ignored |
+| `SET LONG <n>` | Maximum characters displayed per CLOB/NCLOB/LONG/XMLTYPE value (1..2,000,000,000; the value is truncated before rendering, so every format sees the cap). Never set = uncapped; `SHOW LONG` then reports `long 80` |
+| `TIMI[NG] START [text]` / `TIMING SHOW` / `TIMING STOP` | Nested elapsed timers (LIFO). `SHOW`/bare `TIMING` peek; `STOP` pops and prints `timing for: <name>` + `Elapsed: HH:MM:SS.cc`; bare `TIMING` prints `N timing elements in use.`; `STOP` on an empty stack reports `SP2-0630`. `CLEAR TIMING` removes all timers |
+| `SHOW SQLFORMAT` / `SHOW MARKUP` / `SHOW LONG` / `SHOW TIMING` | Report the corresponding session state |
+| `SET SQLPROMPT` / `SET LONGCHUNKSIZE` | Accepted and ignored |
+| `SET EXITCOMMIT ON\|OFF` | Whether ending the session commits (default `ON`) or rolls back uncommitted work |
 | `DEFINE <var> = <value>` | Define a substitution variable |
 | `@<file>` / `@@<file>` | Run a script (absolute / relative path) |
 | `SPOOL <file> [CREATE\|REPLACE\|APPEND]` / `SPOOL OFF` | Write output to a file (quote paths containing spaces; `.lst` added when the file name has no extension) |
 | `SET TERMOUT OFF` | Suppress screen output produced by scripts (`file`, `@`, `job`) — the SPOOL file still receives everything |
-| `WHENEVER SQLERROR EXIT [code]` | Exit on error with a code |
+| `WHENEVER SQLERROR EXIT [code] [COMMIT\|ROLLBACK]` | Exit on error with a code; the optional keyword picks the transaction disposition (default: `EXITCOMMIT` → commit) |
+| `WHENEVER OSERROR EXIT [code] [COMMIT\|ROLLBACK]` | Exit after a failed `HOST` command; without a code the process exits with the command's own exit status; the optional keyword picks the transaction disposition |
+| `HOST <cmd>` / `! <cmd>` / `$ <cmd>` | Run an OS command through the shell (`sh -c`, `cmd /C` on Windows). On a TTY with no SPOOL active the command inherits the terminal (interactive programs like `vi` work); otherwise output is captured, printed and spooled. The exit status is kept for `WHENEVER OSERROR`. Bare `HOST` prints SP2-0734 — an interactive shell is not supported |
+| `CLEAR SCREEN` / `CLEAR SCR` | Clear the terminal (ANSI erase; no output when piped or spooled). `CLEAR BREAKS` / `CLEAR COMPUTES` / `CLEAR COLUMNS` clear the corresponding report state; `CLEAR TIMING` empties the timer stack; `CLEAR BUFFER\|SQL` are silent no-ops |
+| `COLUMN [<col> [<option> …]]` | SQL*Plus column formatting: `FORMAT A<n>` or a numeric mask (`999,990.00`, `$99,990.00`, `999MI`, `B999`, `RN`, `TM`, `EEEE`, …), `HEADING 'x'` (split lines on `|` — the SET HEADSEP char), `JUSTIFY LEFT\|CENTER\|RIGHT`, `NULL 'text'`, `WRAPPED`/`WORD_WRAPPED`/`TRUNCATED`, `FOLD_AFTER`/`FOLD_B[EFORE]`, `PRINT`/`NOPRINT`, `NEW_VALUE var`/`OLD_VALUE var` (feed titles/substitution), `LIKE <col>` (copy another column's format), `ALIAS <name>`, `ON`/`OFF`, `CLEAR`. Bare `COLUMN` lists every definition; `COLUMN <col>` lists one (`SP2-0046` when undefined). Bad options report `SP2-0158` |
+| `BRE[AK] [ON {col\|ROW\|REPORT} [SKI[P] n\|PAGE] [DUP[LICATES]\|NODUP[LICATES]]] …` | Group/report breaks: `SKIP n` blank lines (or `SKIP PAGE`) between groups, `NODUP` (default) blanks repeated values. Each `BREAK` replaces the previous spec; multiple `ON` targets are outer→inner. Bare `BREAK` lists the spec |
+| `COMP[UTE] [fn [LAB[EL] 'text'] … OF col … ON {col\|ROW\|REPORT} …]` | Aggregate rows at breaks — `AVG`, `COU[NT]`, `MIN[IMUM]`, `MAX[IMUM]`, `NUM[BER]`, `SUM`, `STD`, `VAR[IANCE]`; compute lines accumulate. The label prints in the break column (first column for `ON REPORT`), underlined by `*` (break column) and the underline char (computed columns). A compute whose `ON` target has no matching `BREAK` is inert |
+| `TTI[TLE]` / `BTI[TLE]` / `REPH[EADER]` / `REPF[OOTER] [printspec]` | Report titles/footers. Print specs: `LE[FT]`, `CE[NTER]`, `R[IGHT]`, `COL n`, `TAB n`, `S[KIP] [n]`, `BOLD` (no-op), `FORMAT mask`, quoted text, `SQL.LNO\|PNO\|RELEASE\|SQLCODE\|USER`, and bare `NEW_VALUE`/`OLD_VALUE`/define variable names. `ON`/`OFF` toggles without losing the spec; bare command lists it; `REPHEADER PAGE` puts the header on its own page; bad options report `SP2-0158`. Single-argument form is the legacy centred title |
+| `PASSW[ORD] [<user>]` | Change a user's password via hidden prompts (`Old password:` → `New password:` → `Retype new password:`). The old-password prompt is skipped when a privileged session names a different user. Passwords are never echoed, logged, audited, or written to history |
+| `STARTUP [FORCE] [RESTRICT] [PFILE=<file>] [NOMOUNT\|MOUNT\|OPEN [READ ONLY\|READ WRITE]] [UPGRADE\|DOWNGRADE]` | Start the Oracle instance. Requires `AS SYSDBA`/`AS SYSOPER`; gated as `DESTRUCTIVE` (confirm/plan/deny per the profile's destructive policy). Thin and thick modes currently report `SP2-0640` — see *Known gaps* |
+| `SHUTDOWN [NORMAL\|IMMEDIATE\|TRANSACTIONAL [LOCAL]\|ABORT]` | Shut the Oracle instance down. Same privilege/policy gating and `SP2-0640` caveat as `STARTUP`. Illegal options report `SP2-0717` (STARTUP: `SP2-0714`) |
 | `PROMPT <text>` | Print a message |
 | `PAUSE [text]` | Wait for user input |
 | `ACCEPT <var> PROMPT '<text>'` | Read user input into a variable |
-| `VARIABLE <name> <type>` | Declare a bind variable |
-| `PRINT <var>` | Print a bind variable |
+| `VARIABLE <name> <type> [= <value>]` | Declare a named bind variable. Types: `NUMBER`, `CHAR[(n [CHAR\|BYTE])]`, `NCHAR[(n)]`, `VARCHAR2[(n [CHAR\|BYTE])]`, `NVARCHAR2[(n)]`, `CLOB`, `NCLOB`, `BINARY_FLOAT`, `BINARY_DOUBLE`, `BINARY_INTEGER`, `BLOB`, `BFILE`, `REFCURSOR` (declared but not bindable yet). `:name` references in SQL/PLSQL are bound IN/OUT — `EXEC :x := 42` stores `42` in `x`; a later `SELECT :x` uses it as input. `VARIABLE` alone lists declarations (`variable X` / `datatype NUMBER`). Undeclared references fail with `SP2-0552` before reaching the database |
+| `PRINT [<var>…]` | Print each bind variable as a one-row result grid (header, `─` underline, value line; NULL prints a blank value line). `COLUMN` formats, `SET NULL`, `NUMFORMAT` and `SQLFORMAT`/`MARKUP` apply as for SELECT; numbers right-align. One blank line after each variable block; no "rows selected" footer. `PRINT` alone prints all declared variables in declaration order. Undeclared names report `SP2-0552` |
 | `DESC[RIBE] <object>` | Describe a table, view, or procedure |
-| `EXIT [code]` / `QUIT [code]` | Exit with a POSIX code |
+| `CONN[ECT] <user>[/<password>][@<dsn>] [AS SYSDBA\|SYSOPER\|SYSASM\|SYSBACKUP\|SYSDG\|SYSKM]` | Switch the session to another user/database. Without `/<password>` you are prompted (input hidden). Without `@<dsn>` the current DSN is reused; in thin mode a bare `tnsnames` alias also falls back to the current DSN (thin cannot resolve aliases). On failure the existing session is kept. The new session stays active for the rest of the script/REPL session, as in SQL\*Plus; the previous session's uncommitted work is ended per `EXITCOMMIT` before the swap — committed by default (see *Transactions and EXIT*) |
+| `DISC[ONNECT]` | Accepted and ignored in script context — the session ends when the script finishes |
+| `SHOW USER` | Connected user (from the live session) |
+| `SHOW REL[EASE]` | Database release number |
+| `SHOW PARAMETER[S] [filter]` | V$PARAMETER entries matching `filter` |
+| `SHOW SPPARAMETER[S] [filter]` | V$SPPARAMETER entries matching `filter` |
+| `SHOW CON_NAME` / `SHOW CON_ID` | Current container name / id |
+| `SHOW PDBS` | Pluggable databases (`V$PDBS`) |
+| `SHOW SGA` | SGA components (`V$SGA`) |
+| `SHOW EDITION` | Current edition |
+| `SHOW ERRORS [type [schema.]name]` | Compilation errors |
+| `SHOW ALL` / `SHOW <setting>` | Session settings (`LINESIZE`, `DEFINE`, `VERIFY`, …) |
+| `EXIT [code\|:bind\|<var>] [COMMIT\|ROLLBACK]` / `QUIT …` | Exit with a POSIX code. `EXIT :x` uses the bind variable's value (non-numeric → 1); a bare `<var>` reads a `DEFINE` substitution variable. `COMMIT`/`ROLLBACK` override `EXITCOMMIT` for this exit |
+
+**Display settings**
+
+These `SET` options drive the renderer for script (`file`, `@`, `job`) and
+SPOOL output:
+
+| Setting | Behaviour |
+|---|---|
+| `SET PAGESIZE 0` | Suppresses column headings everywhere |
+| `SET PAGESIZE <n>` | Repeats heading and separator every *n* data rows (script/SPOOL only; the interactive grid shows one heading) |
+| `SET LINESIZE <n>` | Splits over-wide rows into SQL*Plus column bands that each fit within *n* characters (script/SPOOL only; must be set explicitly) |
+| `SET NULL '<text>'` | Text shown for NULL values in Table, CSV and Markdown (JSON stays `null`) |
+| `SET COLSEP '<sep>'` | Literal column separator in header, separator and data rows; the default `" "` keeps QuinSQL's 3-space gutter |
+| `SET WRAP ON\|OFF` | ON continues over-wide cells on following lines within their column (other columns blank); OFF truncates. The interactive console always truncates |
+| `SET TRIMSPOOL ON\|OFF` | When explicitly set ON, strips trailing blanks from every SPOOL line |
+| `SET NEWPAGE <n>` | Blank lines emitted at each page break (default 1) |
+| `SET FEEDBACK <n>` | "N rows selected" footer only when the result has at least *n* rows; `ON` = 1, `OFF` hides footers and completion messages |
+| `SET ECHO ON\|OFF` | Echo each script statement before its result as written, including the source terminator (`;` on the last line, `/` on its own line); typed input is never echoed and no `SQL> ` prompts or line numbers are added |
+| `SET TIMING ON\|OFF` | Append `Elapsed: HH:MM:SS.cc` after SQL/PLSQL statements |
+| `SET NUMFORMAT '<mask>'` | Default numeric mask for columns without a `COLUMN … FORMAT` (also right-justifies bare numeric `SQL.*` title variables at NUMWIDTH) |
+| `SET NUMWIDTH <n>` | Default numeric display width; unformatted numbers wider than *n* overflow to `#`s (script/SPOOL only) |
+| `SET HEADSEP '<c>'` / `SET HEADSEP OFF` | Character that splits `COLUMN … HEADING` text into multiple heading lines (default `\|`) |
+| `SET UNDERLINE '<c>'` / `SET UNDERLINE ON\|OFF` | Character used for the heading separator band and compute underlines (default `─`); `OFF` removes the band (script/SPOOL only) |
+| `SET RECSEP WRAPPED\|EACH\|OFF` | Print a record-separator line after wrapped rows / every row / never (script/SPOOL, only when set explicitly) |
+| `SET RECSEPCHAR '<c>'` | Character for the record-separator line |
+
+**Reports**
+
+`COLUMN`, `BREAK`, `COMPUTE` and the four title commands combine into the
+classic SQL\*Plus report. The canonical form — one page per department with
+the department number in the title and a grand total at the end:
+
+```sql
+SET LINESIZE 60
+SET PAGESIZE 20
+COLUMN deptno NEW_VALUE dv NOPRINT
+BREAK ON deptno SKIP PAGE
+TTITLE LEFT 'Department ' dv
+BTITLE CENTER '-- confidential --'
+COMPUTE SUM OF sal ON REPORT
+SELECT deptno, ename, sal FROM quinsql_emp ORDER BY deptno, ename;
+```
+
+```text
+Department 10
+
+ENAME     SAL
+──────   ────
+CLARK    2450
+KING     5000
+MILLER   1300
+
+                     -- confidential --
+
+Department 20
+…
+```
+
+(the `dv` variable is re-valued per page; each page ends with `BTITLE` on the
+last line — taken verbatim from `tests/compat/p2_titles.expected`).
+
+What applies where:
+
+- **Interactive console / TUI:** `COLUMN` masks, headings (`|` split),
+  `JUSTIFY`, per-column `NULL`, `BREAK`/`COMPUTE` rows, and titles —
+  `REPHEADER`/`TTITLE` once above the grid, `BTITLE`/`REPFOOTER` once below.
+- **Script (`file`, `@`, `job`) and SPOOL only:** `PAGESIZE` line accounting
+  with repeated headings, `REPHEADER PAGE`, `SKIP PAGE` page breaks, title
+  `SQL.LNO`/`SQL.PNO` per page, per-column overflow (`WRAPPED`…), folds,
+  `SET UNDERLINE`, `SET RECSEP`, `SET NUMWIDTH`.
+- **Titles and breaks/computes render in Table format only** — CSV, JSON and
+  Markdown exports never include them.
+- `SET PAGESIZE 0` suppresses titles and headings entirely.
+
+Known deviations from SQL\*Plus:
+
+- `BOLD` in a title is accepted but renders plain (no terminal-bold tracking).
+- `L`/`C`/`U` currency mask elements render the session currency as `$`
+  (no NLS lookup yet).
+- `SQL.SQLCODE` in titles is always `0` (last-error tracking not wired).
+- The heading band uses `─` (or `SET UNDERLINE c`); the compute underline
+  uses `*` under the break column.
+- `PAGESIZE` counts physical lines SQL*Plus-style (titles + blank + headings
+  + data) in scripts/SPOOL; the interactive console never paginates.
+
+**Unsupported SQL\*Plus commands**
+
+`APPEND`, `ARCHIVE`, `ATTRIBUTE`, `CHANGE`, `COPY`, `DEL`, `EDIT`, `GET`,
+`HELP`, `HISTORY`, `INPUT`, `LIST`, `RECOVER`,
+`RUN`, `SAVE`, `STORE` and `XQUERY`
+are recognised but not implemented. They are reported as
+`SP2-0734: unknown command "<name>" - not supported by QuinSQL, rest of line ignored`
+— a client-side message, not a SQL error, so `WHENEVER SQLERROR` does not
+trigger — and are never sent to the database. Oracle SQL that begins with
+`SET` (`SET TRANSACTION`, `SET ROLE`, `SET CONSTRAINT[S]`, and the Oracle
+26ai access-control statement `SET USE DATA GRANTS ONLY ON …
+[ENABLED|DISABLED]`) is passed through to the database unchanged —
+`;`-terminated and possibly multi-line, like any SQL statement. A `SET`
+option that is neither implemented nor on the accepted-and-ignored list
+reports `SP2-0158: unknown SET option "<name>"`.
+
+**CONNECT**
+
+`CONNECT user/password[@dsn] [AS SYSDBA|SYSOPER|…]` opens a new session and
+prints `Connected.` User and password may each be double-quoted —
+`CONNECT alice/"P@ss/w0rd"@orclpdb` strips the quotes and treats `/` and
+`@` inside them literally. `CONNECT user[@dsn]` (no `/`) prompts for the
+password on stderr. A failed `CONNECT` leaves the session disconnected —
+statements then fail with `SP2-0640: Not connected` until a `CONNECT`
+succeeds.
+
+**Transactions and EXIT**
+
+QuinSQL follows the SQL\*Plus/SQLcl rules for what happens to open work:
+
+| Event | Behaviour | Controlled by |
+|---|---|---|
+| DML / PL/SQL statement | No commit — work stays in the open transaction | `SET AUTOCOMMIT OFF` (default) |
+| `SET AUTOCOMMIT ON` / `IMMEDIATE` | `COMMIT` after every successful DML/PLSQL statement; prints `Commit complete.` | |
+| `SET AUTOCOMMIT <n>` | `COMMIT` after every *n* successful DML statements | |
+| `COMMIT` / `ROLLBACK` | Explicit | |
+| DDL (`CREATE`, `ALTER`, `DROP`, …) | Implicit commit (server side — cannot be prevented) | |
+| `EXIT` / `QUIT`, `WHENEVER … EXIT`, end of script | **COMMIT** | `SET EXITCOMMIT ON` (default) |
+| `EXIT COMMIT` / `EXIT ROLLBACK` | As written — overrides `EXITCOMMIT` | |
+| `SET EXITCOMMIT OFF` + `EXIT` | `ROLLBACK` | |
+| `WHENEVER SQLERROR\|OSERROR EXIT … COMMIT\|ROLLBACK` | The keyword is applied when the action fires | |
+| `CONNECT` to another session | The old session's transaction is ended per `EXITCOMMIT` **before** the swap; on success `Connected.` is printed. On failure the session is left **disconnected** (SQL\*Plus semantics): subsequent statements report `SP2-0640: Not connected` until a later `CONNECT` succeeds | |
+| Session killed / network drop | `ROLLBACK` (server side) | |
+
+Headless mode (`exec`, `file`, `job`) never prompts: a failed session-end
+`COMMIT` is printed and makes the exit code non-zero. The interactive TUI
+handles uncommitted changes separately — see `USERGUIDE-TUI.md`
+(`[transaction] exit = "ask"`, the default).
 
 SPOOL files are always written as plain-text table output without colour,
 regardless of `--format` or how QuinSQL was launched (TTY, pipe, or
@@ -656,3 +825,9 @@ WHENEVER SQLERROR EXIT SQL.SQLCODE
 CREATE TABLE test (id NUMBER);
 -- If CREATE fails, the script exits with the Oracle error code
 ```
+
+**Known gaps**
+
+| Command | Status |
+|---|---|
+| `STARTUP` / `SHUTDOWN` | Fully parsed and policy-gated (`DESTRUCTIVE`), but both the thin driver lacks the startup/shutdown and the thick driver (not wired yet) report `SP2-0640: <CMD> is not available in thin mode`. |

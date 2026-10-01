@@ -349,6 +349,48 @@ appended when the file name has no extension.  In scripts (`@file`,
 `quinsql file`, scheduled jobs) `SET TERMOUT OFF` suppresses screen output
 while the spool file still receives everything.
 
+`SHOW` topics are supported too:
+
+```sql
+SHOW USER            -- connected user (from the live session)
+SHOW RELEASE         -- database release number
+SHOW PARAMETER ldap  -- V$PARAMETER entries matching a filter
+SHOW SPPARAMETER     -- V$SPPARAMETER entries
+SHOW CON_NAME        -- current container (also CON_ID, PDBS, SGA, EDITION)
+SHOW ERRORS          -- compilation errors
+SHOW LINESIZE        -- any session setting (DEFINE, VERIFY, FEEDBACK, …)
+```
+
+Display settings (`PAGESIZE`, `LINESIZE`, `WRAP`, `NEWPAGE`) apply to script
+and SPOOL output.  The interactive grid keeps a single heading and sizes
+columns to the terminal rather than paginating or splitting into column
+bands; `NULL`, `COLSEP`, `FEEDBACK`, `ECHO` and `TIMING` apply everywhere.
+
+Reports (`COLUMN` formats, `BREAK`/`COMPUTE`, `TTITLE`/`BTITLE`/`REPHEADER`/
+`REPFOOTER`) work on the console too: masks, multi-line headings, `JUSTIFY`,
+per-column `NULL`, break and compute rows all render in the scrollback, and
+titles print once above/below the grid — there is no paging, no repeated
+headings, and `SKIP PAGE` degrades to one blank line.  Paging, per-column
+overflow (`WRAPPED`/`TRUNCATED`), folds, `SET UNDERLINE`, `SET RECSEP` and
+`SET NUMWIDTH` remain script/SPOOL-only — see
+[Reports](USERGUIDE-CLI.md#sqlplus-script-compatibility) in the CLI guide.
+
+`SET SQLFORMAT` / `SET MARKUP CSV` change the console output format too
+(CSV/JSON/Markdown render in the scrollback instead of the grid) and drive
+SPOOL output as well — `/format` only affects the interactive console. `SET
+LONG` caps LOB display length and `TIMING START/SHOW/STOP` works from the
+prompt; details in the CLI guide's compatibility section.
+
+`HOST <cmd>` / `! cmd` / `$ cmd` run an OS command and show its captured
+stdout/stderr in the scrollback (also written to the SPOOL file).  The exit
+status is recorded for `WHENEVER OSERROR`.  Interactive host programs
+(`vi`, `top`, `less`, …) are **not** supported inside the TUI — the session
+owns the terminal in raw mode.  Use [`/edit`](#edit) to open `$EDITOR`
+instead.  Bare `HOST` prints SP2-0734 — an interactive shell is not supported.
+
+`CLEAR SCREEN` (or `CLEAR SCR`) empties the scrollback and re-adds the
+session banner — the same as `/clear`.
+
 ### Substitution variables and prompts
 
 `&var` / `&&var` references are expanded on every line before it runs — in SQL, in
@@ -371,6 +413,10 @@ new   1: SELECT * FROM emp WHERE deptno = 10
 - `&var` — the value is used for this statement only; the next statement asks again.
 - `&&var` — asked once, then kept for the session like `DEFINE`.
 - `ACCEPT`, `PAUSE` and `CONNECT user` typed at the prompt pause the same way.
+- `PASSW[ORD] [user]` prompts `Old password:` / `New password:` /
+  `Retype new password:` with hidden input (the old-password prompt is skipped
+  when a privileged session names another user). Passwords are never echoed,
+  logged, audited, or written to history.
 - Inside an `@script` the script resumes at the same statement once you answer.
 - `SET VERIFY OFF` hides the `old`/`new` lines; `SET DEFINE OFF` disables expansion
   entirely (for data containing `&`); `SET DEFINE ~` switches the character.
@@ -410,6 +456,13 @@ Switches to a different connection profile without restarting QuinSQL.
 /conn dev-hr
 /connect              -- opens interactive profile picker
 ```
+
+**Disconnected state:** a failed `CONNECT` (typed or inside a `@` script)
+leaves the session disconnected — SQL\*Plus semantics. The prompt then reads
+`(not connected) ▸` and every statement reports `SP2-0640: Not connected`
+until a `CONNECT user/password[@dsn]` succeeds or `/connect <profile>`
+switches profiles. Quitting is unaffected — there is no open transaction
+while disconnected, so `/quit` exits immediately.
 
 ---
 
@@ -817,6 +870,35 @@ in red on the offending field's label row and clear as soon as you edit it.
 Saving a job — new or edited — always enables it and registers the OS
 timer; use `/schedule disable` to pause.
 
+#### One scheduler, many users and databases
+
+Every job carries its **own connection profile** — the `RUNS AS` field lists
+all saved profiles, not just the one you are connected to — so a single
+QuinSQL installation can drive jobs across different users, PDBs and
+instances from the same `/schedule` list:
+
+```
+j-0101  nightly_stats.sql      hr@PROD_HR        daily 02:00
+j-0102  purge_audit.sql        auditadm@PROD_SEC daily 02:00
+j-0103  refresh_mviews.sql     app@DEV_PDB1      weekly mon,thu 06:30
+```
+
+- Each job runs as its own `quinsql job <ID>` process under that job's
+  profile, with that profile's credentials, policy gates and audit trail.
+  Nothing is shared between jobs — the interactive session's connection is
+  not involved.
+- Jobs for **different** profiles (or different scripts) fire independently
+  and may run **at the same time**; the overlap guard is per job, so only a
+  second instance of the *same* job is skipped (`previous run still active`)
+  while the previous run is still going.
+- Passwords are stored per profile in `credentials.enc` when the job is
+  saved. If your interactive credentials live in the OS keychain, changing a
+  profile's password means re-saving the jobs that use it
+  (`/schedule edit` → Save) so the file store is refreshed; with the
+  encrypted-file credential store both share the same entry.
+- `/schedule list` shows `user@profile` for each job; `/schedule history`
+  and the per-run logs are kept per job.
+
 #### Behaviour details
 
 - **Times are local wall-clock** on the machine the job runs on — a `02:00`
@@ -870,3 +952,34 @@ Exits the QuinSQL TUI cleanly.
 ```
 
 Keyboard equivalent: `Ctrl+D`.
+
+#### Quitting with uncommitted changes
+
+Every exit path (`/quit`, `/exit`, `Ctrl+D`, typed `EXIT`/`QUIT`, a script
+`EXIT` after the `y` confirmation, `/connect`) funnels through the same
+transaction check. If the session is clean, QuinSQL quits immediately. If DML
+or PL/SQL left an open transaction, the `[transaction] exit` setting in
+`config.toml` decides:
+
+```toml
+[transaction]
+exit = "ask"        # "ask" | "commit" | "rollback"  (default: "ask")
+```
+
+- **`ask`** (default) — prints
+  `Uncommitted changes — commit (c), rollback (r), or cancel (Esc)?` and waits:
+  `c` commits and quits, `r` rolls back and quits, `Esc` or `n` cancels and
+  keeps you in the session.
+- **`commit`** — commits silently and quits (SQL\*Plus `EXITCOMMIT ON`
+  behaviour).
+- **`rollback`** — rolls back silently and quits.
+
+An explicit `EXIT … COMMIT` / `EXIT … ROLLBACK` always wins — the keyword is
+honoured without prompting regardless of the setting. A failed commit or
+rollback is reported in the scrollback and the session stays open so you can
+retry or choose differently.
+
+The status bar shows a small `txn` badge while the session holds an open
+transaction. Headless mode (`quinsql exec` / `file` / `job`) never prompts —
+it follows `SET EXITCOMMIT` (default ON) and `EXIT … COMMIT|ROLLBACK`; see
+*Transactions and EXIT* in `USERGUIDE-CLI.md`.
