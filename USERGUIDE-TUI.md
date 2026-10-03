@@ -262,6 +262,13 @@ The same drill-down behaviour applies anywhere object names are expected — `FR
 Autocompletion works from the local schema catalog. If the catalog has not been loaded yet,
 run `/catalog load` first (see [/catalog](#catalog)).
 
+SQL\*Plus commands are offered at the start of a line too — `HO`+`Tab` completes
+to `HOST`, `CL` to `CLEAR`, and so on for every implemented command. `SET`,
+`SHOW`, `WHENEVER`, `CLEAR` and `TIMING` complete their own option and value
+lists (`SET FE` → `FEEDBACK`, `SET FEEDBACK O` → `ON`/`OFF`,
+`WHENEVER SQLERROR EX` → `EXIT`) — while typing those arguments, object and
+keyword completion is suppressed so the popup shows only valid choices.
+
 ---
 
 ## The Scrollback Area
@@ -658,7 +665,7 @@ stored locally for fast autocompletion, graph analysis, and browsing without rou
 | Subcommand | Description |
 |---|---|
 | `status` | Show catalog freshness, loaded schemas, last refresh time |
-| `load` | Load / refresh all objects for all schemas |
+| `load` | Load / refresh all objects for all schemas — also refreshes column type spellings (e.g. `VARCHAR2(10 CHAR)`); snapshots loaded before type-length support show bare type names until refreshed |
 | `load --schema S` | Load / refresh a specific schema |
 | `load security` | Load the privilege and role graph |
 | `schemas` | List all known schemas |

@@ -307,6 +307,13 @@ SELECT COUNT(*) AS total FROM orders;
 EXIT 0
 ```
 
+**Line continuation:** like SQL\*Plus, a line whose trimmed text ends with
+`-` continues onto the next line — the hyphen becomes a single space. This
+applies to SQL\*Plus commands (`SET FEEDBACK -` + `OFF`), to `REM` lines and
+to SQL (even when the line ends with an inline `--` comment). Lines that
+*start* with `--` never continue, so `-- --------` separators are safe.
+Inside PL/SQL blocks the hyphen stays literal.
+
 ---
 
 ### job
@@ -592,16 +599,16 @@ All standard SQL\*Plus commands are supported:
 | `SET HEADING ON\|OFF` | Show/hide column headers |
 | `SET LINESIZE <n>` | Output line width |
 | `SET PAGESIZE <n>` | Rows per page |
-| `SET SERVEROUTPUT ON` | Enable `DBMS_OUTPUT` output |
+| `SET SERVEROUTPUT ON [SIZE n\|UNLIMITED] [FORMAT WRAPPED\|WORD_WRAPPED\|TRUNCATED]` | Enable `DBMS_OUTPUT` output; `FORMAT` wraps/truncates lines at `LINESIZE` |
 | `SET DEFINE OFF\|ON\|<char>` | Enable/disable substitution variables |
 | `SET TIMING ON\|OFF` | Show execution time per statement |
 | `SET VERIFY ON\|OFF` | Show old/new values for substitution variables |
 | `SET NULL '<text>'` | Text displayed for NULL values |
 | `SET COLSEP '<char>'` | Column separator character |
 | `SET AUTOCOMMIT OFF\|ON\|IMMEDIATE\|<n>` | Commit automatically: `ON`/`IMMEDIATE` after every DML/PLSQL statement (`Commit complete.` is printed), `<n>` after every *n* DML statements, `OFF` (default) never |
-| `SET SQLFORMAT [csv\|delimited [d [l [r]]]\|json\|json-formatted\|markdown\|default\|ansiconsole\|text\|fixed]` | SQLcl output format — drives **both** console and SPOOL while in force (unlike `/format`/`--format`, which set the console only and leave the spool in Table). `csv` quotes every non-numeric cell; `delimited` takes optional separator/left/right enclosure characters (asymmetric enclosures report SP2-0158 and keep the left one); other kinds use minimal quoting. Bare `SET SQLFORMAT` resets to the default. `insert`, `loader`, `html`, `xml` report `SP2-0158` — not supported |
+| `SET SQLFORMAT [csv\|delimited [d [l [r]]]\|json\|json-formatted\|markdown\|insert\|default\|ansiconsole\|text\|fixed]` | SQLcl output format — drives **both** console and SPOOL while in force (unlike `/format`/`--format`, which set the console only and leave the spool in Table). `csv` quotes every non-numeric cell; `delimited` takes optional separator/left/right enclosure characters (`l`/`r` honoured asymmetrically, both default to `"`); `insert` emits `REM INSERTING into <T>` / `SET DEFINE OFF;` / `Insert into …` statements per SQLcl (table = first FROM-clause table). Bare `SET SQLFORMAT` resets to the default. `loader`, `html`, `xml` report `SP2-0158` — not supported |
 | `SET MARKUP CSV ON [DELIMITER c] [QUOTE ON\|OFF]` / `SET MARKUP CSV OFF` | SQL\*Plus equivalent of `SET SQLFORMAT csv` (quote-all by default; `QUOTE OFF` = minimal quoting). `OFF` restores whatever format was in force before `ON`. `SET MARKUP HTML …` is accepted and ignored |
-| `SET LONG <n>` | Maximum characters displayed per CLOB/NCLOB/LONG/XMLTYPE value (1..2,000,000,000; the value is truncated before rendering, so every format sees the cap). Never set = uncapped; `SHOW LONG` then reports `long 80` |
+| `SET LONG <n>` | Maximum characters displayed per CLOB/NCLOB/LONG/XMLTYPE value (1..2,000,000,000; the value is truncated before rendering, so every format sees the cap). Never set = uncapped; `SHOW LONG` then reports `long 2000000000` |
 | `TIMI[NG] START [text]` / `TIMING SHOW` / `TIMING STOP` | Nested elapsed timers (LIFO). `SHOW`/bare `TIMING` peek; `STOP` pops and prints `timing for: <name>` + `Elapsed: HH:MM:SS.cc`; bare `TIMING` prints `N timing elements in use.`; `STOP` on an empty stack reports `SP2-0630`. `CLEAR TIMING` removes all timers |
 | `SHOW SQLFORMAT` / `SHOW MARKUP` / `SHOW LONG` / `SHOW TIMING` | Report the corresponding session state |
 | `SET SQLPROMPT` / `SET LONGCHUNKSIZE` | Accepted and ignored |
@@ -624,7 +631,7 @@ All standard SQL\*Plus commands are supported:
 | `PROMPT <text>` | Print a message |
 | `PAUSE [text]` | Wait for user input |
 | `ACCEPT <var> PROMPT '<text>'` | Read user input into a variable |
-| `VARIABLE <name> <type> [= <value>]` | Declare a named bind variable. Types: `NUMBER`, `CHAR[(n [CHAR\|BYTE])]`, `NCHAR[(n)]`, `VARCHAR2[(n [CHAR\|BYTE])]`, `NVARCHAR2[(n)]`, `CLOB`, `NCLOB`, `BINARY_FLOAT`, `BINARY_DOUBLE`, `BINARY_INTEGER`, `BLOB`, `BFILE`, `REFCURSOR` (declared but not bindable yet). `:name` references in SQL/PLSQL are bound IN/OUT — `EXEC :x := 42` stores `42` in `x`; a later `SELECT :x` uses it as input. `VARIABLE` alone lists declarations (`variable X` / `datatype NUMBER`). Undeclared references fail with `SP2-0552` before reaching the database |
+| `VARIABLE <name> <type> [= <value>]` | Declare a named bind variable. Types: `NUMBER`, `CHAR[(n [CHAR\|BYTE])]`, `NCHAR[(n)]`, `VARCHAR2[(n [CHAR\|BYTE])]`, `NVARCHAR2[(n)]`, `CLOB`, `NCLOB`, `BINARY_FLOAT`, `BINARY_DOUBLE`, `BINARY_INTEGER`, `BLOB`, `BFILE`, `REFCURSOR` (OUT cursor bind — `EXEC OPEN :rc FOR SELECT …` fills it, `PRINT rc` renders the rows as a grid once, like SQL*Plus). `:name` references in SQL/PLSQL are bound IN/OUT — `EXEC :x := 42` stores `42` in `x`; a later `SELECT :x` uses it as input. `VARIABLE` alone lists declarations (`variable X` / `datatype NUMBER`). Undeclared references fail with `SP2-0552` before reaching the database |
 | `PRINT [<var>…]` | Print each bind variable as a one-row result grid (header, `─` underline, value line; NULL prints a blank value line). `COLUMN` formats, `SET NULL`, `NUMFORMAT` and `SQLFORMAT`/`MARKUP` apply as for SELECT; numbers right-align. One blank line after each variable block; no "rows selected" footer. `PRINT` alone prints all declared variables in declaration order. Undeclared names report `SP2-0552` |
 | `DESC[RIBE] <object>` | Describe a table, view, or procedure |
 | `CONN[ECT] <user>[/<password>][@<dsn>] [AS SYSDBA\|SYSOPER\|SYSASM\|SYSBACKUP\|SYSDG\|SYSKM]` | Switch the session to another user/database. Without `/<password>` you are prompted (input hidden). Without `@<dsn>` the current DSN is reused; in thin mode a bare `tnsnames` alias also falls back to the current DSN (thin cannot resolve aliases). On failure the existing session is kept. The new session stays active for the rest of the script/REPL session, as in SQL\*Plus; the previous session's uncommitted work is ended per `EXITCOMMIT` before the swap — committed by default (see *Transactions and EXIT*) |
@@ -653,7 +660,7 @@ SPOOL output:
 | `SET LINESIZE <n>` | Splits over-wide rows into SQL*Plus column bands that each fit within *n* characters (script/SPOOL only; must be set explicitly) |
 | `SET NULL '<text>'` | Text shown for NULL values in Table, CSV and Markdown (JSON stays `null`) |
 | `SET COLSEP '<sep>'` | Literal column separator in header, separator and data rows; the default `" "` keeps QuinSQL's 3-space gutter |
-| `SET WRAP ON\|OFF` | ON continues over-wide cells on following lines within their column (other columns blank); OFF truncates. The interactive console always truncates |
+| `SET WRAP ON\|OFF` | ON continues over-wide cells on following lines within their column (other columns blank); OFF truncates. The interactive console always truncates. Cells with embedded newlines (CLOBs, `DBMS_METADATA` output) render one output line per segment — the first on the row line, continuations with the other columns blank; CSV keeps the newline inside the quoted field, JSON escapes it as `\n`, Markdown flattens to a space |
 | `SET TRIMSPOOL ON\|OFF` | When explicitly set ON, strips trailing blanks from every SPOOL line |
 | `SET NEWPAGE <n>` | Blank lines emitted at each page break (default 1) |
 | `SET FEEDBACK <n>` | "N rows selected" footer only when the result has at least *n* rows; `ON` = 1, `OFF` hides footers and completion messages |
@@ -699,7 +706,7 @@ Department 20
 ```
 
 (the `dv` variable is re-valued per page; each page ends with `BTITLE` on the
-last line — taken verbatim from `tests/compat/p2_titles.expected`).
+last line).
 
 What applies where:
 
