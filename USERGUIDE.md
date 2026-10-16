@@ -49,6 +49,10 @@ It runs as a single native binary with no additional runtimes.
 - **Audit journal** — every statement is recorded with outcome, actor, and timing.
 - **Schedule jobs** — run periodic `.sql` scripts by the **operating system's own
 scheduler** (Linux, macOS, and Windows) and get notified on completion.
+- **AI features** — `/ask` turns natural language into SQL (shown before it runs),
+  explains and fixes ORA errors, and can run agent skills — Markdown runbooks in the
+  Anthropic SKILL.md format. Works with any LLM or fully offline; every AI-proposed
+  statement passes the same safety pipeline. See the [AI Guide](USERGUIDE-AI.md).
 
 ---
 
@@ -306,7 +310,9 @@ quinsql import quinsql-backup.zip --data-dir /opt/quinsql-data
 
 `quinsql export --include-schedule` also carries scheduled jobs, their
 scripts and encrypted wallets; `quinsql import --scripts-dir/--wallet-dir`
-controls where they land.  Jobs are created in the TUI with `/schedule` —
+controls where they land.  Likewise `--include-skills` carries agent skills
+and `--skills-dir` controls where they are restored.  Jobs are created in
+the TUI with `/schedule` —
 see the [TUI Guide](USERGUIDE-TUI.md#schedule) and the
 [CLI Guide](USERGUIDE-CLI.md#job) for details.
 
@@ -320,4 +326,5 @@ see the [TUI Guide](USERGUIDE-TUI.md#schedule) and the
 |---|---|
 | [CLI Guide](USERGUIDE-CLI.md) | Headless mode, `exec`, `file`, `job` (scheduler runner), output formats, piping |
 | [TUI Guide](USERGUIDE-TUI.md) | Interactive REPL, slash-commands, `/schedule` jobs, scroll mode, SQL*Plus compat |
+| [AI Guide](USERGUIDE-AI.md) | `/ask`, ORA-error explain and fix, agent skills, LLM configuration |
 | [LOAD / UNLOAD Guide](USERGUIDE-LOAD-UNLOAD.md) | Data import/export, Parquet, Arrow, all format options |

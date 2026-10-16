@@ -11,12 +11,15 @@
 - [Commands](#commands)
   - [connect](#connect)
   - [connect-save](#connect-save)
+  - [connect-list](#connect-list)
   - [connect-delete](#connect-delete)
   - [exec](#exec)
   - [file](#file)
   - [job](#job)
   - [setup](#setup)
   - [admin-password](#admin-password)
+  - [llm-key](#llm-key)
+  - [skills](#skills)
   - [export](#export)
   - [import](#import)
 - [Output Formats](#output-formats)
@@ -181,6 +184,44 @@ quinsql connect-save --name adb-dev \
 
 ---
 
+### connect-list
+
+[^ top](#table-of-contents)
+
+Lists all saved connection profiles — no secrets shown, no administrator password
+required.
+
+```bash
+quinsql connect-list
+quinsql connect-list --name <profile>   # one profile as a vertical record
+```
+
+Columns: `Profile` ( `*` marks the default), `User`, `Priv` (`normal`/`sysdba`/`sysoper`),
+`Auth` (`password`/`wallet`/`oci`), `Policy` (preset · `global`/`custom` source),
+`Credential` — where a stored credential was found: `keychain`, `file`, `keychain+file`
+(a leftover entry in the OS keychain alongside the file store), `—` (none), or `n/a`
+for non-password auth methods — and `DSN` last.
+
+In a terminal the `DSN` column is truncated with `…` so the table fits the screen
+width (never narrower than 20 columns); output piped to a file or another command
+is never truncated. Use `--name <profile>` for the full record — in a terminal the
+DSN wraps onto continuation lines indented under the value column; piped output is
+a single line:
+
+```text
+Profile:     adb-prod *
+User:        ADMIN
+Privilege:   normal
+Auth:        wallet
+Policy:      open · global
+Credential:  n/a
+Wallet:      /home/oracle/.quinsql/wallets/adb-prod   (only when a wallet is set)
+DSN:         (description= (retry_count=20)(retry_delay=3)(address=(protocol=tcps)(port=1521)
+             (host=adb.us-phoenix-1.oraclecloud.com))(connect_data=(service_name=...))
+```
+
+---
+
 ### connect-delete
 
 [^ top](#table-of-contents)
@@ -190,12 +231,14 @@ and command history.
 
 ```bash
 quinsql connect-delete <profile-name>
+quinsql connect-delete --all      # delete every saved profile (asks for confirmation)
 ```
 
-**Example:**
+**Examples:**
 
 ```bash
 quinsql connect-delete old-dev
+quinsql connect-delete --all
 ```
 
 ---
@@ -314,6 +357,13 @@ to SQL (even when the line ends with an inline `--` comment). Lines that
 *start* with `--` never continue, so `-- --------` separators are safe.
 Inside PL/SQL blocks the hyphen stays literal.
 
+**Headless `/ask`:** `quinsql exec "/ask …"` and `/ask` lines inside `quinsql
+file` scripts print the AI proposal but never park for confirmation. The
+generated statement executes only when it is classified `READ` and
+`[ai].auto_run_reads = true`; otherwise QuinSQL prints `statement not
+executed — requires interactive confirmation`, audits the proposal, and
+continues with exit code 0. See the [AI Guide](USERGUIDE-AI.md#headless-ask).
+
 ---
 
 ### job
@@ -405,6 +455,48 @@ Both operations prompt for the password interactively; it is never passed as a c
 
 ---
 
+### llm-key
+
+[^ top](#table-of-contents)
+
+Manages the LLM API key used by `/ask`, ORA-error explain, and agent skills.
+The key is stored in the configured credential store under `__llm__:<provider>`
+— never in `config.toml`; the provider's standard environment variable
+(e.g. `ANTHROPIC_API_KEY`) is used as a fallback.
+
+```bash
+quinsql llm-key set [--provider <p>]
+quinsql llm-key delete [--provider <p>]
+```
+
+| Flag | Description |
+|---|---|
+| `--provider <p>` | any `[llm]` provider name (see USERGUIDE-AI.md → `[llm]`); defaults to `[llm].provider` |
+
+---
+
+### skills
+
+[^ top](#table-of-contents)
+
+Headless mirror of the `/skills` REPL command — lists, inspects, and validates
+agent skills under `[ai.skills].dir`. Pure filesystem: works with no LLM
+configured and no database connection.
+
+```bash
+quinsql skills list
+quinsql skills show <name>
+quinsql skills validate [<name>]
+```
+
+| Exit code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | `validate` found an error-severity issue (CI gate) |
+| `2` | `show` named an unknown skill |
+
+---
+
 ### export
 
 [^ top](#table-of-contents)
@@ -412,7 +504,7 @@ Both operations prompt for the password interactively; it is never passed as a c
 Creates a portable ZIP backup of QuinSQL configuration.
 
 ```bash
-quinsql export <output.zip> [--include-catalog] [--include-audit] [--include-schedule]
+quinsql export <output.zip> [--include-catalog] [--include-audit] [--include-schedule] [--include-skills]
 ```
 
 | Flag | Description |
@@ -420,6 +512,7 @@ quinsql export <output.zip> [--include-catalog] [--include-audit] [--include-sch
 | `--include-catalog` | Include the local schema catalog snapshot |
 | `--include-audit` | Include the full audit journal |
 | `--include-schedule` | Include scheduled jobs, run history, and each job's script (with its `@`/`@@` includes) |
+| `--include-skills` | Include agent skills from `[ai.skills].dir` under `skills/<name>/` |
 
 Every export includes `config.toml`, `profiles.db`, `history.db`, the profile
 passwords (re-encrypted with a key derived from the administrator password),
@@ -451,15 +544,16 @@ Restores configuration from a `quinsql export` ZIP file.
 
 ```bash
 quinsql import <file.zip> [--overwrite] [--data-dir <dir>] \
-                          [--scripts-dir <dir>] [--wallet-dir <dir>]
+                          [--scripts-dir <dir>] [--wallet-dir <dir>] [--skills-dir <dir>]
 ```
 
 | Flag | Description |
 |---|---|
-| `--overwrite` | Replace existing profiles and settings with those from the backup |
+| `--overwrite` | Replace existing profiles and settings with those from the backup — stored credentials are deleted then re-written in both the OS keychain and `credentials.enc`; without it, credentials of skipped (existing) profiles are kept as-is |
 | `--data-dir <dir>` | Restore to a specific data directory instead of the default |
-| `--scripts-dir <dir>` | Where job scripts go (default `~/scripts`; prompted when the archive has scripts and the flag is absent) |
-| `--wallet-dir <dir>` | Where wallet directories go (default `~/wallet`; prompted likewise). Each wallet lands in `<wallet-dir>/<name>` (`<name>-2`, `-3`… if it exists, unless `--overwrite`) |
+| `--scripts-dir <dir>` | Where job scripts go (default `<data-dir>/schedule/scripts`, i.e. `~/.quinsql/schedule/scripts`; prompted when the archive has scripts and the flag is absent) |
+| `--wallet-dir <dir>` | Where wallet directories go (default `<data-dir>/wallets`, i.e. `~/.quinsql/wallets`; prompted likewise). Each wallet lands in `<wallet-dir>/<name>` (`<name>-2`, `-3`… if it exists, unless `--overwrite`) |
+| `--skills-dir <dir>` | Where agent skills go (default `[ai.skills].dir`, i.e. `~/.quinsql/skills`) |
 
 When the archive contains a schedule, import **merges** it: every job gets a
 fresh `j-NNNN` id (the summary prints the `old → new` mapping), is imported

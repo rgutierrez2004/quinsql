@@ -32,6 +32,8 @@
   - [/catalog](#catalog)
   - [/graph](#graph)
   - [/audit](#audit)
+  - [/ask](#ask)
+  - [/skills](#skills)
   - [/schedule](#schedule)
   - [/quit](#quit)
 
@@ -68,7 +70,8 @@ quinsql -p dev-hr          # shorthand
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  Status bar — profile, connection state, blast-radius indicator      │
+│  Status bar — profile, connection state, catalog / model chips,      │
+│               blast-radius indicator                                  │
 ├──────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  Scrollback area — all previous output for this session              │
@@ -81,8 +84,9 @@ quinsql -p dev-hr          # shorthand
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-**Status bar** — shows the current user, profile name, connection string, and a
-color-coded blast-radius indicator for the last classified statement:
+**Status bar** — shows the current user, profile name, connection string, a
+`model <name>` chip (the configured LLM, or `model none` when AI is not set up),
+and a color-coded blast-radius indicator for the last classified statement:
 
 | Color | Classification |
 |---|---|
@@ -150,6 +154,8 @@ HR@dev-hr ▸ SELECT employee_id,
 | `;` at the end of the last line + `Enter` | SQL statements |
 | `/` on its own line + `Enter` | SQL statements or PL/SQL blocks |
 | `Enter` on a completed PL/SQL block ending with `/` | PL/SQL procedures, functions, packages |
+
+PL/SQL blocks (`DECLARE`, `BEGIN`, `CREATE PROCEDURE…`) run when you enter `/` on its own line — `;` alone does not submit them.
 
 **Examples:**
 
@@ -283,6 +289,8 @@ configurable cap — the oldest lines are dropped past the limit:
 |---|---|---|
 | `scrollback_lines` | `100000` | Maximum scrollback lines kept (`0` = unlimited) |
 | `frame_interval_ms` | `16` | Minimum ms between screen redraws while a script or pasted batch is running (interactive input always redraws immediately) |
+| `clipboard` | `"auto"` | Clipboard transport for `/copy` / `Ctrl+Y`: `auto` (OS clipboard, falling back to the terminal OSC 52 escape), `osc52`, or `system` |
+| `clipboard_max_bytes` | `1000000` | Upper bound (bytes) for a single `/copy` — terminals cap OSC 52 payloads |
 
 ### Scroll mode
 
@@ -294,7 +302,7 @@ returns immediately. To scroll up and review earlier output:
 Press `Shift+Tab` to enter **scroll mode**. The hint bar changes to show the available keys:
 
 ```
-scroll mode  ↑↓ scroll · PgUp/PgDn page · Home/^H top · End/^E bottom · ←→ pan · ^C/Esc exit
+scroll mode  ↑↓ scroll · PgUp/PgDn page · Home/^H top · End/^E bottom · ←→ pan · ^Y copy · ^C/Esc exit
 ```
 
 | Key | Action |
@@ -310,6 +318,27 @@ scroll mode  ↑↓ scroll · PgUp/PgDn page · Home/^H top · End/^E bottom · 
 > interrupt immediately — QuinSQL clears the buffer and exits scroll mode at once.
 
 Press `Shift+Tab` again or `Ctrl+C` / `Esc` to return to the input prompt.
+
+### Copying results
+
+[^ top](#table-of-contents)
+
+Terminal mouse selection only captures the cells currently on screen. `/copy` puts
+the **full** result — all rows and columns, at full width — on the clipboard:
+
+| Command | Clipboard content |
+|---|---|
+| `/copy` | Last result grid as rendered plain text, full width |
+| `/copy csv` / `/copy json` / `/copy md` | Last result exported as CSV / JSON / Markdown |
+| `/copy sql` | The last executed statement |
+| `/copy all` | The entire scrollback as plain text |
+
+In scroll mode, `Ctrl+Y` is the same as `/copy` (and stays in scroll mode).
+
+When the OS clipboard is unavailable (SSH, headless), `auto` mode falls back to the
+terminal's OSC 52 escape — supported by Windows Terminal, iTerm2, kitty, WezTerm,
+Alacritty, foot, GNOME Terminal ≥ 3.52, and tmux with `set-clipboard on`. Set
+`[ui] clipboard = "osc52"` to force the escape, or `"system"` for OS-clipboard only.
 
 ---
 
@@ -394,6 +423,11 @@ status is recorded for `WHENEVER OSERROR`.  Interactive host programs
 (`vi`, `top`, `less`, …) are **not** supported inside the TUI — the session
 owns the terminal in raw mode.  Use [`/edit`](#edit) to open `$EDITOR`
 instead.  Bare `HOST` prints SP2-0734 — an interactive shell is not supported.
+On Windows the console output code page is set to UTF-8 for the session so
+accented characters in tool output (e.g. `HOST dir` on `café.txt`) display
+correctly.  `tree` is a known exception: when piped it converts its
+box-drawing characters to `+---`/`¦` itself, so use `HOST tree /A` for
+clean ASCII output.
 
 `CLEAR SCREEN` (or `CLEAR SCR`) empties the scrollback and re-adds the
 session banner — the same as `/clear`.
@@ -804,6 +838,10 @@ By default `/audit` shows the **50 most recent** entries.
 | `script:name` | Executed from a SQL script file |
 | `mcp:tool` | Called via an MCP tool |
 
+AI-generated rows carry gate labels such as `AiConfirmed`, `AiProposal`,
+`AiAnswer`, `SkillScript`, `AiAbandoned` — see
+[AI Guide → Audit trail](USERGUIDE-AI.md#audit-trail).
+
 > The Oracle database username is not stored in the SOURCE column — it is determined by the
 > connection profile used for the session.
 
@@ -820,6 +858,76 @@ By default `/audit` shows the **50 most recent** entries.
 /audit --export /tmp/audit-export.jsonl
 /audit --last 100 --search "DELETE"
 ```
+
+---
+
+### /ask
+
+[^ top](#table-of-contents)
+
+Natural language to SQL — the generated statement is always shown and confirmed
+before it runs (`[Y/n]`); WRITE/DDL confirm even under an `allow` policy, and
+DESTRUCTIVE goes through `/plan approve`. Works with any configured LLM
+(`[llm]` in `config.toml` + `quinsql llm-key set`).
+
+```
+/ask <question>
+/ask explain this result
+/ask fix this error
+/ask @<skill-name> [<request>]
+```
+
+| Form | Behaviour |
+|---|---|
+| `/ask <question>` | Generates SQL against the schema catalog and prompts before running |
+| `/ask explain this result` | Explains the last result grid (rows capped by `result_context_rows`) |
+| `/ask fix this error` | Explains the last ORA error and proposes a corrected statement |
+| `/ask @<skill-name> …` | Forces a specific agent skill (`/skills` lists them) |
+
+**Examples:**
+
+```
+/ask which employees earn more than their manager
+/ask now break that down by region
+/ask @partition-maintenance for SALES
+```
+
+Full details: [AI Guide](USERGUIDE-AI.md)
+
+---
+
+### /skills
+
+[^ top](#table-of-contents)
+
+Lists, inspects, validates, and reloads agent skills — Markdown runbooks under
+`~/.quinsql/skills/` that `/ask` activates from natural language. Read-only;
+works without a model configured.
+
+```
+/skills
+/skills show <name>
+/skills validate [<name>]
+/skills reload
+```
+
+| Option | Description |
+|---|---|
+| _(none)_ | List every skill with its ✔/⚠ status and `allowed-tools` |
+| `show <name>` | Frontmatter, files by folder, first 40 body lines, issues |
+| `validate [<name>]` | Full validation report (all skills, or one) |
+| `reload` | Re-read the skills directory (clears the cached catalog) |
+
+**Examples:**
+
+```
+/skills
+/skills show partition-maintenance
+/skills validate
+```
+
+Headless mirrors for CI: `quinsql skills list|show|validate`. Full details:
+[AI Guide → Agent Skills](USERGUIDE-AI.md#agent-skills)
 
 ---
 
