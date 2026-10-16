@@ -108,11 +108,11 @@ with additional formats beyond the SQLcl baseline.
 
 | Feature | Status |
 |---|---|
-| `/ask` — natural-language to SQL, schema-grounded, shows query before executing | Coming soon |
-| ORA-error explain and auto-fix — context-aware, proposes corrected statement | Coming soon |
+| `/ask` — natural-language to SQL, schema-grounded, shows query before executing | Available |
+| ORA-error explain and auto-fix — context-aware, proposes corrected statement | Available |
 | `/agent` — plan → diff → approve → execute for multi-step schema changes | Coming soon |
 | `/tune` — execution-plan and AWR-aware performance copilot | Coming soon |
-| Works with any LLM: Anthropic, OpenAI, Gemini, Groq, OCI GenAI, local Ollama | Coming soon |
+| Works with any LLM: Anthropic, OpenAI, Gemini, Groq, xAI, OCI GenAI (OpenAI-compatible endpoint), local Ollama | Available |
 | Fully offline when no model is configured | Available |
 
 ### Administration
@@ -120,7 +120,7 @@ with additional formats beyond the SQLcl baseline.
 | Feature | Status |
 |---|---|
 | Administrator credential — QuinSQL-level password stored in OS keychain | Available |
-| Export / Import — ZIP-based portable transfer of profiles, history, config | Available |
+| Export / Import — ZIP-based portable transfer of profiles, history, config, skills (`--include-skills`) | Available |
 | `quinsql admin-password set / reset` | Available |
 | Scheduled jobs — OS-native timers (systemd / launchd / Task Scheduler) running `.sql` scripts through the normal pipeline; e-mail notifications; portable via `export --include-schedule` | Available |
 
@@ -130,7 +130,7 @@ with additional formats beyond the SQLcl baseline.
 |---|---|
 | MCP server — expose QuinSQL tools to Claude, Copilot, and other agents | Coming soon |
 | MCP client — agent can reach Jira, Slack, object storage mid-task | Coming soon |
-| Skill system — Markdown-defined runbooks invocable as slash-commands | Coming soon |
+| Agent Skills — Markdown runbooks (Anthropic SKILL.md format) activated from natural language, `/skills` to manage | Available |
 
 ## Feature Comparison
 
@@ -155,10 +155,10 @@ respects everything they built. The world of database tooling has simply moved o
 | Safety policies and blast-radius gating | No | No | Yes |
 | Undo-first execution | No | No | Coming soon |
 | Schedule jobs to run SQL scripts | No | Yes | Yes, multi-platform and notification support (Windows, Linux, macOS) |
-| Audit journal with AI rationale | No | No | Yes / coming soon |
-| Natural-language querying (any LLM) | No | Only via external agent or cloud AI | Coming soon |
+| Audit journal with AI rationale | No | No | Yes |
+| Natural-language querying (any LLM) | No | Only via external agent or cloud AI | Yes |
 | Agentic plan → diff → approve workflow | No | No | Coming soon |
-| ORA-error explain and auto-fix | No | No | Coming soon |
+| ORA-error explain and auto-fix | No | No | Yes |
 | Performance copilot (plan + AWR-aware) | No | No | Coming soon |
 | MCP server and client | No | Server only (26.x) | Coming soon (both) |
 | License / cost | Free | Free | Free |
@@ -255,6 +255,20 @@ Move jobs between machines with `quinsql export backup.zip
 `[smtp]` block in `config.toml` (password stored via `/schedule
 smtp-password`).
 
+### 7 — Ask in natural language
+
+```toml
+# ~/.quinsql/config.toml
+[llm]
+provider = "anthropic"
+model    = "claude-sonnet-4-5"
+```
+
+```
+quinsql llm-key set      # store the API key once (OS keychain)
+/ask which employees earn more than their manager
+```
+
 ## Documentation
 
 | Guide | Contents |
@@ -262,6 +276,7 @@ smtp-password`).
 | [User Guide](USERGUIDE.md) | Overview, installation, platform support, connection profiles |
 | [CLI Guide](USERGUIDE-CLI.md) | Headless mode, all CLI commands, output formats, scripting |
 | [TUI Guide](USERGUIDE-TUI.md) | Interactive REPL, slash-commands, autocompletion, scroll mode |
+| [AI Guide](USERGUIDE-AI.md) | /ask, ORA-error explain and fix, agent skills, skill-writing best practices |
 | [LOAD / UNLOAD Guide](USERGUIDE-LOAD-UNLOAD.md) | Data import/export, Parquet, Arrow, all format options |
 
 ## License
