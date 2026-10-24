@@ -1,3 +1,7 @@
+![Static Badge](https://img.shields.io/badge/License-Freeware-brightgreen?style=plastic)
+![Static Badge](https://img.shields.io/badge/Github-Repo-blue?style=plastic&logo=github&link=https%3A%2F%2Fgithub.com%2Frgutierrez2004%2Fquinsql)
+![Static Badge](https://img.shields.io/badge/Coverage-95%25-orange?style=plastic&logo=github&link=https%3A%2F%2Fgithub.com%2Frgutierrez2004%2Fquinsql)
+
 # QuinSQL
 
 **A next-generation, AI-powered alternative to SQL*Plus and SQLcl.**
