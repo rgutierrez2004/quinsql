@@ -1,6 +1,9 @@
 ![Static Badge](https://img.shields.io/badge/License-Freeware-brightgreen?style=plastic)
 ![Static Badge](https://img.shields.io/badge/Github-Repo-blue?style=plastic&logo=github&link=https%3A%2F%2Fgithub.com%2Frgutierrez2004%2Fquinsql)
-![Static Badge](https://img.shields.io/badge/Coverage-95%25-orange?style=plastic&logo=github&link=https%3A%2F%2Fgithub.com%2Frgutierrez2004%2Fquinsql)
+![Static Badge](https://img.shields.io/badge/Coverage-95%25-orange)
+![Static Badge](https://img.shields.io/badge/Apple-OS-yellow?style=plastic&logo=apple&logoColor=white)
+![Static Badge](https://img.shields.io/badge/Linux-OS-yellow?style=plastic&logo=linux&logoColor=white)
+![Static Badge](https://img.shields.io/badge/Windows-OS-yellow?style=plastic&logo=git%20for%20windows&logoColor=white)
 
 # QuinSQL
 
